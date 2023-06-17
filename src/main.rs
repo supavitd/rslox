@@ -3,6 +3,11 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process;
 
+mod error;
+mod scanner;
+mod token;
+mod token_type;
+
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
     dbg!(&args);
@@ -20,6 +25,10 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn init() {
+    scanner::init();
 }
 
 fn run_file(file_path: &String) {
@@ -53,4 +62,6 @@ fn run_prompt() -> std::io::Result<()> {
     Ok(())
 }
 
-fn run(source: String) {}
+fn run(source: String) {
+    init();
+}
