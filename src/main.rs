@@ -4,9 +4,16 @@ use std::io::prelude::*;
 use std::process;
 
 mod error;
+mod expr;
+mod parser;
 mod scanner;
 mod token;
 mod token_type;
+
+use expr::{Expr, Literal};
+use parser::Parser;
+use scanner::Scanner;
+use token::Token;
 
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -16,6 +23,8 @@ fn main() -> std::io::Result<()> {
         println!("Usage: rslox [script]");
         process::exit(64);
     }
+
+    init();
 
     if args.len() == 2 {
         let file_path = &args[1];
@@ -63,5 +72,7 @@ fn run_prompt() -> std::io::Result<()> {
 }
 
 fn run(source: String) {
-    init();
+    let mut scanner = Scanner::new(source);
+    let tokens = scanner.scan_tokens().unwrap();
+    let mut parser = Parser::new(tokens);
 }
