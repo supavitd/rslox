@@ -5,15 +5,19 @@ use std::process;
 
 mod error;
 mod expr;
+mod interpreter;
+mod lox;
 mod parser;
 mod scanner;
 mod token;
 mod token_type;
 
-use expr::{Expr, Literal};
+use expr::{Expr, Value};
 use parser::Parser;
 use scanner::Scanner;
 use token::Token;
+
+use crate::interpreter::Interpreter;
 
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -74,5 +78,10 @@ fn run_prompt() -> std::io::Result<()> {
 fn run(source: String) {
     let mut scanner = Scanner::new(source);
     let tokens = scanner.scan_tokens().unwrap();
+    dbg!("{}", tokens);
     let mut parser = Parser::new(tokens);
+    let expr = parser.parse().unwrap();
+    dbg!("{}", &expr);
+
+    dbg!("{}", Interpreter::evaluate(&expr).unwrap());
 }

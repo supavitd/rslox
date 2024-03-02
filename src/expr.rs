@@ -1,12 +1,14 @@
 use crate::token::Token;
+use crate::lox;
 use std::boxed::Box;
+use std::convert::TryFrom;
 
 #[derive(Debug)]
 pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Unary(Token, Box<Expr>),
     Grouping(Box<Expr>),
-    Literal(Literal),
+    Literal(Value),
 }
 
 impl Expr {
@@ -19,11 +21,11 @@ impl Expr {
     }
 
     pub fn literal_num(num: f64) -> Self {
-        Self::Literal(Literal::Number(num))
+        Self::Literal(Value::Number(num))
     }
 
     pub fn literal_str(string: String) -> Self {
-        Self::Literal(Literal::String(string))
+        Self::Literal(Value::String(string))
     }
 
     pub fn grouping(expr: Expr) -> Self {
@@ -31,11 +33,51 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
-pub enum Literal {
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
     String(String),
     Number(f64),
     True,
     False,
     Nil,
+}
+
+impl TryFrom<Value> for bool {
+    type Error = lox::RuntimeError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let coerced = match value {
+            Value::True => true,
+            Value::False => false,
+            Value::Nil => false,
+            Value::String(s) => s.is_empty(),
+            Value::Number(n) => n == 0.0,
+        };
+
+        Ok(coerced)
+    }
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = lox::RuntimeError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        if let Value::Number(n) = value {
+            Ok(n)
+        } else {
+            Err(Self::Error { message: "Not a number".to_string() })
+        }
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = lox::RuntimeError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        if let Value::String(s) = value {
+            Ok(s)
+        } else {
+            Err(Self::Error { message: "Not a string".to_string()})
+        }
+    }
 }

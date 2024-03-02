@@ -1,4 +1,4 @@
-use crate::expr::{Expr, Literal};
+use crate::expr::{Expr, Value};
 use crate::token::Token;
 use crate::token_type::TokenType;
 use std::fmt;
@@ -9,7 +9,11 @@ pub struct Parser<'a> {
 }
 
 #[derive(Debug)]
-pub struct ParseError {}
+pub struct ParseError {
+    message: String,
+}
+
+pub type ParseResult = Result<Expr, ParseError>;
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -22,106 +26,133 @@ impl<'a> Parser<'a> {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Option<Expr> {
-        Some(self.expression())
+    pub fn parse(&mut self) -> ParseResult {
+        self.expression()
     }
 
-    fn expression(&mut self) -> Expr {
+    fn expression(&mut self) -> ParseResult {
         self.equality()
     }
 
-    fn equality(&mut self) -> Expr {
-        let mut expr = self.comparison();
-        while matches!(
-            self.peek().type_,
-            TokenType::BangEqual | TokenType::EqualEqual
-        ) {
+    fn equality(&mut self) -> ParseResult {
+        let mut expr = self.comparison()?;
+
+        while let Some(next) = self.peek() {
+            if !matches!(next.type_, TokenType::BangEqual | TokenType::EqualEqual) {
+                break;
+            }
             let token = self.advance().clone();
-            let right = self.comparison();
+            let right = self.comparison()?;
+            expr = Expr::binary(expr, token, right);
+        }
+        Ok(expr)
+    }
+
+    fn comparison(&mut self) -> ParseResult {
+        let mut expr = self.term()?;
+        while let Some(next) = self.peek() {
+            if !matches!(
+                next.type_,
+                TokenType::Greater
+                    | TokenType::GreaterEqual
+                    | TokenType::Less
+                    | TokenType::LessEqual
+            ) {
+                break;
+            }
+            let token = self.advance().clone();
+            let right = self.comparison()?;
+            expr = Expr::binary(expr, token, right);
+        }
+        Ok(expr)
+    }
+
+    fn term(&mut self) -> ParseResult {
+        let mut expr = self.factor()?;
+        while let Some(next) = self.peek() {
+            if !matches!(next.type_, TokenType::Plus | TokenType::Minus) {
+                break;
+            }
+            let token = self.advance().clone();
+            let right = self.factor()?;
+            expr = Expr::binary(expr, token, right);
+        }
+        Ok(expr)
+    }
+
+    fn factor(&mut self) -> ParseResult {
+        let mut expr = self.unary()?;
+        while let Some(next) = self.peek() {
+            if !matches!(next.type_, TokenType::Slash | TokenType::Star) {
+                break;
+            }
+            let token = self.advance().clone();
+            let right = self.unary()?;
             expr = Expr::binary(expr, token, right);
         }
 
-        expr
+        Ok(expr)
     }
 
-    fn comparison(&mut self) -> Expr {
-        let mut expr = self.term();
+    fn unary(&mut self) -> ParseResult {
+        let Some(next) = self.peek() else {
+            unimplemented!();
+        };
 
-        while matches!(
-            self.peek().type_,
-            TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual
-        ) {
+        if matches!(next.type_, TokenType::Bang | TokenType::Minus) {
             let token = self.advance().clone();
-            let right = self.term();
-            expr = Expr::binary(expr, token, right);
+            let expr = self.unary()?;
+            return Ok(Expr::unary(token, expr));
         }
 
-        expr
+        self.primary()
     }
 
-    fn term(&mut self) -> Expr {
-        let mut expr = self.factor();
-
-        while matches!(self.peek().type_, TokenType::Plus | TokenType::Minus) {
-            let token = self.advance().clone();
-            let right = self.factor();
-            expr = Expr::binary(expr, token, right);
-        }
-
-        expr
-    }
-
-    fn factor(&mut self) -> Expr {
-        let mut expr = self.unary();
-
-        while matches!(self.peek().type_, TokenType::Slash | TokenType::Star) {
-            let token = self.advance().clone();
-            let right = self.unary();
-            expr = Expr::binary(expr, token, right);
-        }
-
-        expr
-    }
-
-    fn unary(&mut self) -> Expr {
-        if matches!(self.peek().type_, TokenType::Bang | TokenType::Minus) {
-            let token = self.advance().clone();
-            Expr::unary(token, self.unary())
-        } else {
-            self.primary()
-        }
-    }
-
-    fn primary(&mut self) -> Expr {
+    fn primary(&mut self) -> ParseResult {
         let token = self.advance();
-        match &token.type_ {
+        let expr = match &token.type_ {
             TokenType::Number(num) => Expr::literal_num(*num),
             TokenType::String(string) => Expr::literal_str(string.clone()),
-            TokenType::True => Expr::Literal(Literal::True),
-            TokenType::False => Expr::Literal(Literal::False),
-            TokenType::Nil => Expr::Literal(Literal::Nil),
+            TokenType::True => Expr::Literal(Value::True),
+            TokenType::False => Expr::Literal(Value::False),
+            TokenType::Nil => Expr::Literal(Value::Nil),
             TokenType::LeftParen => {
-                let expr = self.expression();
+                let expr = self.expression()?;
                 if !matches!(self.advance().type_, TokenType::RightParen) {
-                    panic!("To be fixed later.");
+                    return Err(ParseError { message: "Expected ')' after expression".to_string()});
                 }
                 Expr::grouping(expr)
             }
-            _ => panic!("To be fixed later"),
-        }
+            _ => { return Err(ParseError { message: "Expected expression.".to_string() }); }
+        };
+
+        Ok(expr)
     }
 
-    fn peek(&self) -> &Token {
-        &self.tokens[self.current]
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.current)
     }
 
     fn is_at_end(&self) -> bool {
-        matches!(self.peek().type_, TokenType::Eof)
+        if let Some(token) = self.peek() {
+            return matches!(token.type_, TokenType::Eof);
+        }
+        true
     }
 
     fn advance(&mut self) -> &Token {
         let token = &self.tokens[self.current];
-        self.current += 1;
+        if !self.is_at_end() {
+            self.current += 1;
+        }
         token
+    }
+
+    fn synchronize(&mut self) {
+        self.advance();
+
+        while !self.is_at_end() {
+
+        }
     }
 }
